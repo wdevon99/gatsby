@@ -1,14 +1,42 @@
-const { parse, validate, execute } = require(`graphql`)
-const { debounce } = require(`lodash`)
+import {
+  parse,
+  validate,
+  execute,
+  GraphQLSchema,
+  DocumentNode,
+  GraphQLError,
+} from "graphql"
+import { debounce } from "lodash"
+import { Store } from "redux"
+import withResolverContext from "../schema/context"
+import { LocalNodeModel } from "../schema/node-model"
+import nodeStore from "../db/nodes"
+import createPageDependency from "../db/nodes"
 
-const withResolverContext = require(`../schema/context`)
-const { LocalNodeModel } = require(`../schema/node-model`)
+interface IGraphQLRunnerStats {
+  totalQueries: number
+  uniqueOperations: Set<string>
+  uniqueQueries: Set<string>
+  totalRunQuery: number
+  totalPluralRunQuery: number
+  filtersUsed: Map<string, string>
+  complexFiltersUsed: Map<string, string>
+  uniqueSingleFilters: Set<string>
+  uniqueTotalFilters: Set<string>
+  uniqueSorts: Set<string>
+}
 
-class GraphQLRunner {
-  constructor(store) {
+export default class GraphQLRunner {
+  store: Store
+  nodeModel: LocalNodeModel
+  schema: GraphQLSchema
+  parseCache: Map<any, any>
+  validDocuments: WeakSet<any>
+  stats: IGraphQLRunnerStats
+  scheduleClearCache: any
+
+  constructor(store: Store) {
     this.store = store
-    const nodeStore = require(`../db/nodes`)
-    const createPageDependency = require(`../redux/actions/add-page-dependency`)
     const { schema, schemaCustomization } = this.store.getState()
 
     this.nodeModel = new LocalNodeModel({
@@ -21,38 +49,55 @@ class GraphQLRunner {
     this.parseCache = new Map()
     this.validDocuments = new WeakSet()
     this.scheduleClearCache = debounce(this.clearCache.bind(this), 5000)
+
+    this.stats = {
+      totalQueries: 0,
+      uniqueOperations: new Set(),
+      uniqueQueries: new Set(),
+      totalRunQuery: 0,
+      totalPluralRunQuery: 0,
+      filtersUsed: new Map(),
+      complexFiltersUsed: new Map(),
+      uniqueSingleFilters: new Set(),
+      uniqueTotalFilters: new Set(),
+      uniqueSorts: new Set(),
+    }
   }
 
-  clearCache() {
+  clearCache(): void {
     this.parseCache.clear()
     this.validDocuments = new WeakSet()
   }
 
-  parse(query) {
+  parse(query): DocumentNode {
     if (!this.parseCache.has(query)) {
       this.parseCache.set(query, parse(query))
     }
     return this.parseCache.get(query)
   }
 
-  validate(schema, document) {
+  validate(schema: GraphQLSchema, document: DocumentNode): Array<GraphQLError> {
     if (!this.validDocuments.has(document)) {
       const errors = validate(schema, document)
       if (!errors.length) {
         this.validDocuments.add(document)
       }
-      return errors
+      return errors as Array<GraphQLError>
     }
     return []
   }
 
-  query(query, context) {
+  query(query: string, context: { [key: string]: any }): Promise<any> {
     const { schema, schemaCustomization } = this.store.getState()
 
     if (this.schema !== schema) {
       this.schema = schema
       this.clearCache()
     }
+
+    this.stats.totalQueries++
+    this.stats.uniqueOperations.add(`${query}${JSON.stringify(context)}`)
+    this.stats.uniqueQueries.add(query)
 
     const document = this.parse(query)
     const errors = this.validate(schema, document)
@@ -70,6 +115,7 @@ class GraphQLRunner {
               context,
               customContext: schemaCustomization.context,
               nodeModel: this.nodeModel,
+              stats: this.stats,
             }),
             variableValues: context,
           })
@@ -81,5 +127,3 @@ class GraphQLRunner {
     return Promise.resolve(result)
   }
 }
-
-module.exports = GraphQLRunner

@@ -10,8 +10,11 @@ const {
 } = require(`graphql`)
 const { getValueAt } = require(`../utils/get-value-at`)
 
-const findMany = typeName => (source, args, context, info) =>
-  context.nodeModel.runQuery(
+const findMany = typeName => (source, args, context, info) => {
+  if (context.stats) {
+    context.stats.totalRunQuery++
+  }
+  return context.nodeModel.runQuery(
     {
       query: args,
       firstOnly: false,
@@ -19,6 +22,7 @@ const findMany = typeName => (source, args, context, info) =>
     },
     { path: context.path, connectionType: typeName }
   )
+}
 
 const findOne = typeName => (source, args, context, info) =>
   context.nodeModel.runQuery(
