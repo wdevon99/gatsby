@@ -13,6 +13,7 @@ const { getValueAt } = require(`../utils/get-value-at`)
 const findMany = typeName => (source, args, context, info) => {
   if (context.stats) {
     context.stats.totalRunQuery++
+    context.stats.totalPluralRunQuery++
   }
   return context.nodeModel.runQuery(
     {
@@ -20,19 +21,25 @@ const findMany = typeName => (source, args, context, info) => {
       firstOnly: false,
       type: info.schema.getType(typeName),
     },
-    { path: context.path, connectionType: typeName }
+    { path: context.path, connectionType: typeName },
+    context.stats
   )
 }
 
-const findOne = typeName => (source, args, context, info) =>
-  context.nodeModel.runQuery(
+const findOne = typeName => (source, args, context, info) => {
+  if (context.stats) {
+    context.stats.totalRunQuery++
+  }
+  return context.nodeModel.runQuery(
     {
       query: { filter: args },
       firstOnly: true,
       type: info.schema.getType(typeName),
     },
-    { path: context.path }
+    { path: context.path },
+    context.stats
   )
+}
 
 const findManyPaginated = typeName => async (source, args, context, info) => {
   // Peek into selection set and pass on the `field` arg of `group` and

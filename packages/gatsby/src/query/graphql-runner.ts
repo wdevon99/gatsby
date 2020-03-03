@@ -19,10 +19,10 @@ interface IGraphQLRunnerStats {
   uniqueQueries: Set<string>
   totalRunQuery: number
   totalPluralRunQuery: number
-  filtersUsed: Map<string, string>
-  complexFiltersUsed: Map<string, string>
-  uniqueSingleFilters: Set<string>
-  uniqueTotalFilters: Set<string>
+  totalIndexHits: number
+  totalNonSingleFilters: number
+  comparatorsUsed: Map<string, string>
+  uniqueFilterPaths: Set<string>
   uniqueSorts: Set<string>
 }
 
@@ -56,10 +56,10 @@ export default class GraphQLRunner {
       uniqueQueries: new Set(),
       totalRunQuery: 0,
       totalPluralRunQuery: 0,
-      filtersUsed: new Map(),
-      complexFiltersUsed: new Map(),
-      uniqueSingleFilters: new Set(),
-      uniqueTotalFilters: new Set(),
+      totalIndexHits: 0,
+      totalNonSingleFilters: 0,
+      comparatorsUsed: new Map(),
+      uniqueFilterPaths: new Set(),
       uniqueSorts: new Set(),
     }
   }

@@ -165,17 +165,19 @@ const runFilterAndSort = (args: Object) => {
     firstOnly = false,
     nodeTypeNames,
     typedKeyValueIndexes,
+    stats,
   } = args
 
-  let result = applyFilters(
+  const result = applyFilters(
     filter,
     firstOnly,
     nodeTypeNames,
     typedKeyValueIndexes,
-    resolvedFields
+    resolvedFields,
+    stats
   )
 
-  return sortNodes(result, sort, resolvedFields)
+  return sortNodes(result, sort, resolvedFields, stats)
 }
 
 exports.runSift = runFilterAndSort
@@ -198,7 +200,8 @@ const applyFilters = (
   firstOnly,
   nodeTypeNames,
   typedKeyValueIndexes,
-  resolvedFields
+  resolvedFields,
+  stats
 ) => {
   const filters = filterFields
     ? prefixResolvedFields(
@@ -207,8 +210,22 @@ const applyFilters = (
       )
     : []
 
+  if (stats) {
+    filters.forEach(filter => {
+      const filterStats = filterToStats(filter)
+      stats.comparatorsUsed.add(filterStats.comparatorPath)
+      stats.uniqueFilterPaths.push(filterStats.filterPath)
+    })
+    if (filters.length > 1) {
+      stats.totalNonSingleFilters++
+    }
+  }
+
   const result = filterWithoutSift(filters, nodeTypeNames, typedKeyValueIndexes)
   if (result) {
+    if (stats) {
+      stats.totalIndexHits++
+    }
     if (firstOnly) {
       return result.slice(0, 1)
     }
@@ -216,6 +233,21 @@ const applyFilters = (
   }
 
   return filterWithSift(filters, firstOnly, nodeTypeNames, resolvedFields)
+}
+
+const filterToStats = (filter, filterPath = [], comparatorPath = []) => {
+  if (filter.type === `elemMatch`) {
+    return filterToStats(
+      filter.nestedQuery,
+      filterPath.concat(filter.path),
+      comparatorPath.concat([`elemMatch`])
+    )
+  } else {
+    return {
+      filterPath: filterPath.concat(filterPath),
+      comparatorPath: comparatorPath.concat(filter.query.comparator),
+    }
+  }
 }
 
 /**
@@ -364,7 +396,7 @@ const _runSiftOnNodes = (
  * @param resolvedFields
  * @returns {Array<Node> | undefined | null} Same as input, except sorted
  */
-const sortNodes = (nodes, sort, resolvedFields) => {
+const sortNodes = (nodes, sort, resolvedFields, stats) => {
   if (!sort || nodes?.length <= 1) {
     return nodes
   }
@@ -385,6 +417,12 @@ const sortNodes = (nodes, sort, resolvedFields) => {
     })
     .map(field => v => getValueAt(v, field))
   const sortOrder = sort.order.map(order => order.toLowerCase())
+
+  if (stats) {
+    sortFields.forEach(sortField => {
+      stats.uniqueSorts.add(sortField)
+    })
+  }
 
   return _.orderBy(nodes, sortFields, sortOrder)
 }
