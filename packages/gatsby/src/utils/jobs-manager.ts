@@ -1,11 +1,11 @@
-const uuid = require(`uuid/v4`)
-const path = require(`path`)
-const hasha = require(`hasha`)
-const fs = require(`fs-extra`)
-const pDefer = require(`p-defer`)
-const _ = require(`lodash`)
-const { createContentDigest, slash } = require(`gatsby-core-utils`)
-const reporter = require(`gatsby-cli/lib/reporter`)
+import uuid from "uuid/v4"
+import path from "path"
+import hasha from "hasha"
+import fs from "fs-extra"
+import pDefer from "p-defer"
+import _ from "lodash"
+import { createContentDigest, slash } from "gatsby-core-utils"
+import reporter from "gatsby-cli/lib/reporter"
 
 const MESSAGE_TYPES = {
   JOB_CREATED: `JOB_CREATED`,
@@ -24,13 +24,22 @@ const jobsInProcess = new Map()
 /** @type {Map<string, {job: InternalJob, deferred: pDefer.DeferredPromise<any>}>} */
 const externalJobsMap = new Map()
 
+export class WorkerError extends Error {
+  constructor(message) {
+    super(message)
+    this.name = `WorkerError`
+
+    Error.captureStackTrace(this, WorkerError)
+  }
+}
+
 /**
  * We want to use absolute paths to make sure they are on the filesystem
  *
  * @param {string} filePath
  * @return {string}
  */
-const convertPathsToAbsolute = filePath => {
+function convertPathsToAbsolute(filePath: string): string {
   if (!path.isAbsolute(filePath)) {
     throw new Error(`${filePath} should be an absolute path.`)
   }
@@ -42,7 +51,9 @@ const convertPathsToAbsolute = filePath => {
  *
  * @param {string} path
  */
-const createFileHash = path => hasha.fromFileSync(path, { algorithm: `sha1` })
+function createFileHash(path: string): string {
+  return hasha.fromFileSync(path, { algorithm: `sha1` })
+}
 
 /**
  * @typedef BaseJobInterface
@@ -68,19 +79,25 @@ const createFileHash = path => hasha.fromFileSync(path, { algorithm: `sha1` })
 /** @type {pDefer.DeferredPromise<void>|null} */
 let hasActiveJobs = null
 
-const hasExternalJobsEnabled = () =>
-  process.env.ENABLE_GATSBY_EXTERNAL_JOBS === `true` ||
-  process.env.ENABLE_GATSBY_EXTERNAL_JOBS === `1`
+function hasExternalJobsEnabled(): boolean {
+  return (
+    process.env.ENABLE_GATSBY_EXTERNAL_JOBS === `true` ||
+    process.env.ENABLE_GATSBY_EXTERNAL_JOBS === `1`
+  )
+}
 
 /**
  * Get the local worker function and execute it on the user's machine
  *
  * @template T
- * @param {function({ inputPaths: InternalJob["inputPaths"], outputDir: InternalJob["outputDir"], args: InternalJob["args"]}): T} workerFn
+ * @param {function(BaseJobInterface): T} workerFn
  * @param {InternalJob} job
  * @return {Promise<T>}
  */
-const runLocalWorker = async (workerFn, job) => {
+async function runLocalWorker(
+  workerFn: (BaseJobInterface) => T,
+  job: InternalJob
+): Promise<T> {
   await fs.ensureDir(job.outputDir)
 
   return new Promise((resolve, reject) => {
@@ -102,7 +119,7 @@ const runLocalWorker = async (workerFn, job) => {
   })
 }
 
-const listenForJobMessages = () => {
+function listenForJobMessages(): void {
   process.on(`message`, msg => {
     if (
       msg &&
@@ -135,7 +152,7 @@ const listenForJobMessages = () => {
 /**
  * @param {InternalJob} job
  */
-const runExternalWorker = job => {
+function runExternalWorker(job: InternalJob): void {
   const deferred = pDefer()
   externalJobsMap.set(job.id, {
     job,
@@ -158,7 +175,7 @@ const runExternalWorker = job => {
  * @param {InternalJob} job
  * @return {Promise<object>}
  */
-const runJob = (job, forceLocal = false) => {
+function runJob(job: InternalJob, forceLocal = false): Promise<object> {
   const { plugin } = job
   try {
     const worker = require(path.posix.join(plugin.resolve, `gatsby-worker.js`))
@@ -199,9 +216,11 @@ const runJob = (job, forceLocal = false) => {
  * @param {{name: string, version: string, resolve: string}} plugin
  * @return {InternalJob}
  */
-exports.createInternalJob = (job, plugin) => {
+export function createInternalJob(
+  job: JobInput | InternalJob,
+  plugin: { name: string; version: string; resolve: string }
+): InternalJob {
   // It looks like we already have an augmented job so we shouldn't redo this work
-  // @ts-ignore
   if (job.id && job.contentDigest) {
     return job
   }
@@ -254,7 +273,7 @@ exports.createInternalJob = (job, plugin) => {
  * @param {InternalJob} job
  * @return {Promise<object>}
  */
-exports.enqueueJob = async job => {
+export async function enqueueJob(job: InternalJob): Promise<object> {
   // When we already have a job that's executing, return the same promise.
   // we have another check in our createJobV2 action to return jobs that have been done in a previous gatsby run
   if (jobsInProcess.has(job.contentDigest)) {
@@ -312,15 +331,16 @@ exports.enqueueJob = async job => {
  * @param {string} contentDigest
  * @return {Promise<void>}
  */
-exports.getInProcessJobPromise = contentDigest =>
-  jobsInProcess.get(contentDigest)?.deferred.promise
+export function getInProcessJobPromise(contentDigest: string): Promise<void> {
+  return jobsInProcess.get(contentDigest)?.deferred.promise
+}
 
 /**
  * Remove a job from our inProgressQueue to reduce memory usage
  *
  * @param {string} contentDigest
  */
-exports.removeInProgressJob = contentDigest => {
+export function removeInProgressJob(contentDigest: string): void {
   jobsInProcess.delete(contentDigest)
 }
 
@@ -329,15 +349,20 @@ exports.removeInProgressJob = contentDigest => {
  *
  * @return {Promise<void>}
  */
-exports.waitUntilAllJobsComplete = () =>
-  hasActiveJobs ? hasActiveJobs.promise : Promise.resolve()
+export function waitUntilAllJobsComplete(): Promise<void> {
+  return hasActiveJobs ? hasActiveJobs.promise : Promise.resolve()
+}
 
 /**
- * @param {Partial<InternalJob>  & {inputPaths: InternalJob['inputPaths']}} job
+ * @param {Partial<InternalJob> & {inputPaths: InternalJob['inputPaths']}} job
  * @return {boolean}
  */
-exports.isJobStale = job => {
-  const areInputPathsStale = job.inputPaths.some(inputPath => {
+export function isJobStale(
+  job: Partial<InternalJob> & { inputPaths: InternalJob["inputPaths"] }
+): boolean {
+  const areInputPathsStale = job.inputPaths.some(function(
+    inputPath: InternalJob["inputPaths"]
+  ): boolean {
     // does the inputPath still exists?
     if (!fs.existsSync(inputPath.path)) {
       return true
@@ -349,13 +374,4 @@ exports.isJobStale = job => {
   })
 
   return areInputPathsStale
-}
-
-export class WorkerError extends Error {
-  constructor(message) {
-    super(message)
-    this.name = `WorkerError`
-
-    Error.captureStackTrace(this, WorkerError)
-  }
 }

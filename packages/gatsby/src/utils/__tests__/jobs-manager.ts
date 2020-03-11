@@ -1,6 +1,8 @@
-const path = require(`path`)
-const _ = require(`lodash`)
-const { slash } = require(`gatsby-core-utils`)
+import path from "path"
+import _ from "lodash"
+import { slash } from "gatsby-core-utils"
+import { InternalJob, JobInput } from "../jobs-manager"
+
 let jobManager = null
 
 // I need a mock to spy on
@@ -54,7 +56,7 @@ const plugin = {
   resolve: `/node_modules/gatsby-plugin-test`,
 }
 
-const createMockJob = (overrides = {}) => {
+function createMockJob(overrides: object = {}): JobInput {
   return {
     name: `TEST_JOB`,
     inputPaths: [
@@ -70,7 +72,7 @@ const createMockJob = (overrides = {}) => {
   }
 }
 
-const createInternalMockJob = (overrides = {}) => {
+function createInternalMockJob(overrides: object = {}): InternalJob {
   const { createInternalJob } = jobManager
 
   return createInternalJob(createMockJob(overrides), plugin)
@@ -361,7 +363,7 @@ describe(`Jobs manager`, () => {
       listeners = []
       originalProcessOn = process.on
       originalSend = process.send
-      process.on = (type, cb) => {
+      process.on = function(type, cb): number {
         listeners.push(cb)
       }
 
